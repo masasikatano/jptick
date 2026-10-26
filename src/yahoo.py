@@ -23,7 +23,7 @@ import requests
 log = logging.getLogger("yahoo")
 
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-REQUEST_INTERVAL = 0.5  # リクエスト間の間隔（秒）
+REQUEST_INTERVAL = 0.1  # リクエスト間の間隔（秒）。約3800銘柄で 6〜7 分
 RETRIES = 3
 
 # Yahoo で取得を除外する銘柄コード（必要になったらここに追加）

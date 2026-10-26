@@ -3,5 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
+# ダウンロード済み xlsx は git 管理外だが、フォールバック用 data_j.xlsx は管理対象
 *.xlsx
+!data_j.xlsx
 docs/data/latest.json.tmp

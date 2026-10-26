@@ -1,9 +1,6 @@
-# 東証上場個別株一覧サイト（改造中）
+# 東証上場個別株一覧サイト
 
-JPX の上場銘柄一覧（プライム/スタンダード/グロースの普通株）を銘柄マスタとし、Yahoo Finance から価格（終値・前日比・出来高の参考値）を追記して
-GitHub Pages で公開する静的サイトです。仕様は [spec.md](spec.md) です。構成は `etp` リポジトリがテンプレート。
-
-**注意**: 以下の内容は etp からのコピーのままで、個別株版への改造（master.py の個別株用パース、33業種タブへの変更など）は未着手です。
+JPX の「東証上場銘柄一覧」（data_j.xlsx）を銘柄マスタとし、東証プライム・スタンダード・グロースの普通株（約3800銘柄）について [Yahoo Finance](https://finance.yahoo.com/) から価格（終値・前日比・出来高の参考値）を追記して、GitHub Pages で公開する静的サイトです。仕様は [spec.md](spec.md) です。構成は `etp` リポジトリがテンプレート。
 
 ## 動かし方
 
@@ -21,9 +18,10 @@ PORT=9000 ./run_local.sh
 
 ## データソース
 
-- **銘柄マスタ**: JPX の ETF データベース xlsx（[投資家向けページ](https://www.jpx.co.jp/equities/products/etfs/investors/index.html) から href を動的に抽出してダウンロード。失敗時はリポジトリ内の `nlsgeu000000vx9t.xlsx` をフォールバックとして使う）。1 行目タイトル、4 行目ヘッダ（B 列「コード」始まり、A 列は空白列）、5 行目〜が 454 銘柄。約 40 列をすべて保持する。
-- **価格（主）**: Yahoo Finance の chart API（`query1.finance.yahoo.com/v8/finance/chart/{code}.T?interval=1d&range=5d`）。終値・前日比は close 配列の最後の2点から `(P_n/P_{n-1}-1)*100` で自前計算する。出来高は `volume` 配列の最終ポイント（None なら直近の有効値）。取得失敗・除外銘柄（`src/yahoo.py` の `YAHOO_EXCLUDE` で管理）は行を残し「データなし」。
-- **価格（フォールバック）**: [J-Quants](https://jquants.com/) の日次バー。Yahoo で取れなかった銘柄だけ埋める。Free 版のため取得ウィンドウは「実行日から 12 週間前〜17 週間前」。ウィンドウの最後の2営業日の close で同様に終値・前日比を算出し、UI 上は Yahoo の値と混在して「参考値（YYYY-MM-DD時点）」と明記する。J-Quants の code は「4桁コード＋市場区分1桁」（例: 1301 → 13010）で返るため、先頭4桁で xlsx のコードと突合する。日次バーは latest.json に保持しない。
+- **銘柄マスタ**: JPX の東証上場銘柄一覧 xlsx（[統計ページ](https://www.jpx.co.jp/markets/statistics-equities/misc/01.html) から `data_j*.xlsx` の href を動的に抽出してダウンロード。失敗時はリポジトリ内の `data_j.xlsx` をフォールバックとして使う）。1 行目ヘッダ、2 行目〜。列は コード/銘柄名/市場・商品区分/33業種コード/33業種区分/17業種コード/17業種区分/規模コード/規模区分 などをすべて `fields` として保持する。
+- **対象銘柄の絞り込み**: 「市場・商品区分」列が「プライム（内国株式）」「スタンダード（内国株式）」「グロース（内国株式）」のものだけ（普通株）。ETF・ETN / REIT・ベンチャーファンド等 / 外国株式 / PRO Market / 出資証券は除外する。コードが4桁数字でない銘柄（例: 130A 等のアルファベットコード）も対象外。
+- **価格（主）**: Yahoo Finance の chart API（`query1.finance.yahoo.com/v8/finance/chart/{code}.T?interval=1d&range=5d`）。終値・前日比は close 配列の最後の2点から `(P_n/P_{n-1}-1)*100` で自前計算する。出来高は `volume` 配列の最終ポイント（None なら直近の有効値）。リクエスト間隔は 0.1 秒（約3800銘柄で 6〜7分）。取得失敗・除外銘柄（`src/yahoo.py` の `YAHOO_EXCLUDE` で管理）は行を残し「データなし」。
+- **価格（フォールバック）**: [J-Quants](https://jquants.com/) の日次バー。Yahoo で取れなかった銘柄だけ埋める。Free 版のため取得ウィンドウは「実行日から 12 週間前〜17 週間前」。ウィンドウの最後の2営業日の close で同様に終値・前日比を算出し、UI 上は Yahoo の値と混在して「参考値（YYYY-MM-DD時点）」と明記する。J-Quants の code は「4桁コード＋市場区分1桁」（例: 7203 → 72030）で返るため、先頭4桁で xlsx のコードと突合する。日次バーは latest.json に保持しない。
 
 API キーは `.env` の `JQUANTS_API_KEY`（git 対象外。JSON・ログに出さないこと）。未設定でもジョブは成功し、Yahoo で取れなかった銘柄の価格は「データなし」になる。Yahoo 側にキーは不要。
 
@@ -34,7 +32,7 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-xlsx 列マッピング（1305「iFreeETF TOPIX」行など）、J-Quants ウィンドウ計算、Yahoo の終値・前日比算出、latest.json スキーマを検証する。xlsx の列構成が JPX 側で変わると `tests/test_master.py` が落ちる。
+data_j.xlsx の列マッピング・普通株フィルタ・市場区分の値域、J-Quants ウィンドウ計算、Yahoo の終値・前日比算出、latest.json スキーマを検証する。xlsx の列構成が JPX 側で変わると `tests/test_master.py` が落ちる。
 
 ## GitHub Pages
 
@@ -46,14 +44,15 @@ GitHub Actions（`.github/workflows/update.yml`）が平日 12:30 UTC（JST 21:3
 
 ```
 src/
-  master.py    # JPX xlsx のダウンロード（href 動的抽出）とパース（銘柄マスタ）
+  master.py    # JPX data_j.xlsx のダウンロード（href 動的抽出）とパース・普通株フィルタ（銘柄マスタ）
   yahoo.py     # Yahoo Finance 価格取得（主。終値・前日比の自前計算・除外銘柄管理）
   jquants.py   # J-Quants 日次バー取得（Free 版ウィンドウ・ページネーション・リトライ。フォールバック用に終値・前日比を返す）
   update.py    # オーケストレーション（Yahoo → J-Quants フォールバック）→ docs/data/latest.json
 docs/
-  index.html   # カテゴリタブ（12）＋シンプルテーブルの一覧。検索・ソートなし
+  index.html   # 33業種タブ＋7列シンプルテーブルの一覧。検索・ソートなし
   common.js    # 共通ユーティリティ
   data/latest.json  # 生成済みスナップショット（git 管理）
+data_j.xlsx    # フォールバック用マスタスナップショット（git 管理）
 tests/         # pytest 単体テスト
 ```
 

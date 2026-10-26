@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 手元で ETF 一覧データを更新し、docs/ を簡易サーバで開く。
+# 手元で 東証上場個別株一覧データを更新し、docs/ を簡易サーバで開く。
 #
 #   ./run_local.sh              # venv → 取得 → :8080 で配信
 #   ./run_local.sh --no-serve   # JSON の更新だけ
@@ -55,7 +55,7 @@ source "$VENV/bin/activate"
 if [[ "$DO_UPDATE" -eq 1 ]]; then
   echo "==> 依存関係を入れる"
   pip install -q -r "$ROOT/requirements.txt"
-  echo "==> JPX ETF DB / J-Quants から取得して docs/data/latest.json を更新"
+  echo "==> JPX 上場銘柄一覧 / Yahoo Finance / J-Quants から取得して docs/data/latest.json を更新"
   python -m src.update
 fi
 

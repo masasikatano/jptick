@@ -1,4 +1,4 @@
-name: update-etf-list
+name: update-tick-list
 
 on:
   schedule:

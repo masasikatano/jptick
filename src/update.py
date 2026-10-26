@@ -1,4 +1,4 @@
-"""JPX ETF マスタ + Yahoo Finance 価格（J-Quants フォールバック）をまとめて docs/data/latest.json に書き出す。"""
+"""JPX 上場銘柄マスタ + Yahoo Finance 価格（J-Quants フォールバック）をまとめて docs/data/latest.json に書き出す。"""
 
 from __future__ import annotations
 
@@ -15,13 +15,6 @@ from src import jquants, master, yahoo
 log = logging.getLogger("update")
 ROOT = Path(__file__).resolve().parents[1]
 JST = ZoneInfo("Asia/Tokyo")
-
-CATEGORY_ORDER = [
-    "外国株", "日本株（テーマ別）", "外国債券", "日本株（市場別）",
-    "不動産（REIT）", "レバレッジ型・インバース型", "国内債券",
-    "商品(外国投資法人債券)", "日本株（業種別）", "商品・商品指数",
-    "エンハンスト型", "日本株（規模別）",
-]
 
 
 def load_dotenv() -> None:
@@ -54,7 +47,8 @@ def build_payload(records: list[dict], prices: dict[str, dict]) -> dict:
             "code": rec["code"],
             "code5": rec["code"].zfill(5),
             "name": rec["name"],
-            "category": rec["category"],
+            "market": rec["market"],
+            "industry": rec["industry"],
             "fields": rec["fields"],
             "price": price,
         }
@@ -62,26 +56,24 @@ def build_payload(records: list[dict], prices: dict[str, dict]) -> dict:
             as_of_dates.append(price["as_of"])
         items.append(item)
 
-    categories = []
-    for cat in CATEGORY_ORDER:
-        n = sum(1 for it in items if it["category"] == cat)
-        if n:
-            categories.append({"id": cat, "title": cat, "count": n})
+    # 業種タブは銘柄数順
+    counts: dict[str, int] = {}
     for it in items:
-        if not any(c["id"] == it["category"] for c in categories):
-            categories.append({"id": it["category"], "title": it["category"],
-                               "count": sum(1 for x in items if x["category"] == it["category"])})
+        counts[it["industry"]] = counts.get(it["industry"], 0) + 1
+    categories = [
+        {"id": ind, "title": ind, "count": n}
+        for ind, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
 
     ref_date = max(as_of_dates) if as_of_dates else None
     with_price = sum(1 for it in items if it["price"] is not None)
     return {
         "generated_at": datetime.now(JST).isoformat(timespec="seconds"),
         "timezone": "Asia/Tokyo",
-        "source": "jpx_etf_database+yahoo_finance(+jquants fallback)",
+        "source": "jpx_listed_companies+yahoo_finance(+jquants fallback)",
         "reference": True,
         "reference_date": ref_date,
         "reference_note": f"参考値（{ref_date}時点）" if ref_date else "参考値（データなし）",
-        "sections": [{"title": t, "columns": c} for t, c in master.SECTIONS],
         "categories": categories,
         "count": len(items),
         "with_price_count": with_price,

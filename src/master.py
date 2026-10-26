@@ -1,7 +1,10 @@
-"""JPX の ETF データベース xlsx を取得・パースする（銘柄マスタ）。
+"""JPX の東証上場銘柄一覧 xlsx（data_j.xlsx）を取得・パースする（銘柄マスタ）。
 
-xlsx の href はページ依存のため、JPX の投資家向けページから動的に抽出する。
-取得失敗時はローカルに残っている xlsx をフォールバックとして使う。
+対象は東証プライム・スタンダード・グロースの普通株（内国株式）のみ。
+ETF/REIT/優先株式/外国株/PRO Market 等は「市場・商品区分」列で除外する。
+
+xlsx の href はページ依存のため、JPX の統計ページから動的に抽出する。
+取得失敗時はリポジトリ内のフォールバック xlsx を使う。
 """
 
 from __future__ import annotations
@@ -18,34 +21,21 @@ from openpyxl import load_workbook
 log = logging.getLogger("master")
 
 ROOT = Path(__file__).resolve().parents[1]
-JPX_PAGE_URL = "https://www.jpx.co.jp/equities/products/etfs/investors/index.html"
-FALLBACK_XLSX = ROOT / "nlsgeu000000vx9t.xlsx"
-DOWNLOADED_XLSX = ROOT / "etf_database.xlsx"
+JPX_PAGE_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
+FALLBACK_XLSX = ROOT / "data_j.xlsx"
+DOWNLOADED_XLSX = ROOT / "listed_companies.xlsx"
 
-SHEET_NAME = "データベース"
-HEADER_ROW = 4  # 1 行目タイトル、4 行目がヘッダ（A 列は空白列、B 列「コード」始まり）
-DATA_START_ROW = 5
+HEADER_ROW = 1  # 1 行目がヘッダ
 
-# 詳細ページのセクション分け（列名 → セクション）
-SECTIONS: list[tuple[str, list[str]]] = [
-    ("基本情報", ["コード", "名称", "略称", "連動指標名", "カテゴリー", "管理会社", "上場日"]),
-    ("売買・流動性", ["売買単位(口)", "立会内", "ToSTNeT", "OTC※日本証券業協会公表値を基に算出"]),
-    ("規模・コスト", ["純資産総額（2025年末・百万円）", "総経費率（年率・税込）", "信託報酬（年率・税抜）", "信託財産留保額（基準価額比の●%）"]),
-    ("分配・価格", ["分配金支払基準日", "株価（2025年末・円）", "実績分配金（2025年末・円）", "実績分配金利回り（2025年末）"]),
-    ("iNAV・PCF", ["iNAV配信", "PCF公表方法", "PCF掲載URL(日本語)", "PCF掲載URL(英語)", "PCF更新頻度"]),
-    ("制度・分類", ["根拠法の分類", "税法上の分類", "英語情報の掲載URL", "ブラックアウト期間のカレンダー掲載URL（日本語)", "ブラックアウト期間のカレンダー掲載URL（英語)", "特記事項", "最終更新日"]),
-    ("設定・交換スケジュール", [
-        "設定スケジュール【ETF設定に係る債務引受対象でない場合】",
-        "交換（解約）スケジュール【ETF設定に係る債務引受対象でない場合】",
-        "設定スケジュール【ETF設定に係る債務引受対象である場合】",
-        "交換（解約）スケジュール【ETF設定に係る債務引受対象である場合】",
-        "設定単位①", "設定単位②", "設定単位③",
-        "交換単位①", "交換単位②", "交換単位③",
-        "1口あたりの基準価額（2025年末・円）",
-        "設定概算金額（百万円）", "交換（解約）概算金額（百万円）",
-        "CredNex", "設定", "交換",
-    ]),
-]
+# 対象市場（普通株＝内国株式）。ETF・ETN / REIT 等 / 外国株式 / PRO Market は除外。
+TARGET_MARKETS = ("プライム（内国株式）", "スタンダード（内国株式）", "グロース（内国株式）")
+
+# 「市場・商品区分」→ 表示用の市場区分
+MARKET_LABEL = {
+    "プライム（内国株式）": "プライム",
+    "スタンダード（内国株式）": "スタンダード",
+    "グロース（内国株式）": "グロース",
+}
 
 
 def normalize_header(v: object) -> str:
@@ -63,11 +53,13 @@ def _normalize_value(v: object) -> object:
 
 
 def fetch_xlsx(timeout: int = 30) -> Path | None:
-    """JPX ページから .xlsx の href を抽出してダウンロード。失敗時は None。"""
+    """JPX ページから data_j 系 .xlsx の href を抽出してダウンロード。失敗時は None。"""
     try:
         res = requests.get(JPX_PAGE_URL, timeout=timeout)
         res.raise_for_status()
-        m = re.search(r'href="([^"]+\.xlsx)"', res.text)
+        m = re.search(r'href="([^"]*data_j[^"]*\.xlsx)"', res.text)
+        if not m:
+            m = re.search(r'href="([^"]+\.xlsx)"', res.text)
         if not m:
             log.warning("xlsx の href が見つかりません")
             return None
@@ -94,30 +86,46 @@ def xlsx_path(prefer_download: bool = True) -> Path:
     raise FileNotFoundError(f"xlsx が見つかりません: {FALLBACK_XLSX} / {DOWNLOADED_XLSX}")
 
 
+def _row_to_record(fields: dict[str, object]) -> dict | None:
+    market = str(fields.get("市場・商品区分") or "")
+    if market not in MARKET_LABEL:
+        return None
+    raw_code = fields.get("コード")
+    if raw_code is None:
+        return None
+    code = str(raw_code).strip().zfill(4)
+    if not re.fullmatch(r"\d{4}", code):
+        return None
+    return {
+        "code": code,
+        "name": str(fields.get("銘柄名") or ""),
+        "market": MARKET_LABEL[market],
+        "industry": str(fields.get("33業種区分") or ""),
+        "fields": fields,
+    }
+
+
 def load_master(path: Path | None = None) -> list[dict]:
-    """xlsx を読み、銘柄レコードのリストを返す。各レコードは code/name/category/fields。"""
+    """xlsx を読み、普通株レコードのリストを返す。
+
+    各レコードは code / name / market / industry / fields。
+    fields は xlsx の全列を保持する（詳細ページ復活に備えて残すが表示はしない）。
+    """
     path = path or xlsx_path()
     wb = load_workbook(path, read_only=True, data_only=True)
-    ws = wb[SHEET_NAME]
+    ws = wb[wb.sheetnames[0]]
     rows = ws.iter_rows(values_only=True)
-    for _ in range(HEADER_ROW - 1):
-        next(rows)
     headers = [normalize_header(h) for h in next(rows)]
 
     records: list[dict] = []
     for row in rows:
-        code = row[1] if len(row) > 1 else None
-        if code is None:
-            continue
-        fields: dict[str, object] = {}
-        for i in range(1, len(headers)):
-            if headers[i]:
-                fields[headers[i]] = _normalize_value(row[i] if i < len(row) else None)
-        records.append({
-            "code": str(code),
-            "name": str(fields.get("名称") or ""),
-            "category": str(fields.get("カテゴリー") or ""),
-            "fields": fields,
-        })
+        fields = {
+            headers[i]: _normalize_value(row[i] if i < len(row) else None)
+            for i in range(len(headers))
+            if headers[i]
+        }
+        rec = _row_to_record(fields)
+        if rec is not None:
+            records.append(rec)
     wb.close()
     return records
