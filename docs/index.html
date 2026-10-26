@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>東証上場ETF一覧</title>
+  <style>
+    :root {
+      --bg: #12151c; --bg2: #1a1f2b; --fg: #e8edf5; --muted: #8b95a8;
+      --line: #2a3244; --green: #3dcc8a; --red: #ef6b6b; --yellow: #e0b54a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: var(--bg); color: var(--fg); line-height: 1.45;
+    }
+    header { padding: 1.4rem 1.2rem 1rem; border-bottom: 1px solid var(--line); background: var(--bg2); }
+    h1 { margin: 0 0 .4rem; font-size: 1.35rem; font-weight: 650; }
+    .lede { color: var(--muted); margin: 0; font-size: .95rem; }
+    .meta { margin-top: .7rem; font-size: .9rem; color: var(--muted); }
+    .banner {
+      margin-top: .7rem; padding: .55rem .75rem; border-radius: 6px;
+      background: #2a2430; color: #f0d9a8; font-size: .9rem;
+    }
+    main { padding: 1rem 1.2rem 3rem; }
+    .tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
+    .tab {
+      background: var(--bg2); color: var(--muted); border: 1px solid var(--line);
+      border-radius: 999px; padding: .3rem .8rem; font-size: .82rem; cursor: pointer;
+    }
+    .tab:hover { color: var(--fg); border-color: #3d7aab; }
+    .tab.active { background: #3d7aab; color: #fff; border-color: #3d7aab; }
+    .tab .n { opacity: .75; font-size: .72rem; margin-left: .25rem; }
+    .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; min-width: 900px; }
+    th, td { padding: .42rem .5rem; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { background: #222836; color: var(--muted); font-weight: 600; position: sticky; top: 0; }
+    tr:nth-child(even) td { background: #161b24; }
+    tbody tr:hover td { background: #1d2433; }
+    .num { font-variant-numeric: tabular-nums; text-align: right; }
+    .up { color: var(--green); } .down { color: var(--red); }
+    .miss { color: var(--muted); }
+    .cat-name { max-width: 480px; overflow: hidden; text-overflow: ellipsis; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--fg); }
+    th .arrow { margin-left: .3rem; opacity: .9; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>東証上場ETF一覧</h1>
+    <p class="lede">JPX の ETF データベース（銘柄マスタ）をベースに、Yahoo Finance から終値・前日比・出来高を参考値として併記。カテゴリで絞り込めます。</p>
+    <div class="meta" id="meta">読み込み中…（表示は JST）</div>
+    <div class="banner" id="banner" hidden></div>
+  </header>
+  <main id="main"></main>
+  <script src="common.js?v=20261025b"></script>
+  <script>
+    let DATA = null;
+    let activeCat = "all";
+    let sortKey = "chg";
+    let sortDir = -1;
+
+    // ISO 形式（2026-10-25T02:46:27+09:00）を「2026年10月25日 午前2時46分」に整形する
+    function fmtJst(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (isNaN(d)) return "—";
+      const p = n => String(n).padStart(2, "0");
+      const ampm = d.getHours() < 12 ? "午前" : "午後";
+      const h12 = d.getHours() % 12 === 0 ? 12 : d.getHours() % 12;
+      return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${ampm}${h12}時${p(d.getMinutes())}分`;
+    }
+
+    function row(item, showCat) {
+      const price = item.price || null;
+      const chg = signed(price && price.change_pct);
+      const close = price && price.close != null ? Math.floor(price.close).toLocaleString("ja-JP") : "データなし";
+      const cls = price && price.close != null ? (chg.c || "") : "miss";
+      const mgr = item.fields["管理会社"] || "—";
+      const mgrShort = mgr.length > 10 ? mgr.slice(0, 10) + "…" : mgr;
+      const vol = price && price.volume != null ? price.volume.toLocaleString("ja-JP") : "—";
+      return `<tr data-code="${item.code}">
+        <td class="num">${item.code}</td>
+        <td class="cat-name">${item.name}</td>
+        ${showCat ? `<td>${item.category}</td>` : ""}
+        <td title="${mgr}">${mgrShort}</td>
+        <td class="num">${toNum(item.fields["純資産総額（2025年末・百万円）"]) != null ? Math.floor(toNum(item.fields["純資産総額（2025年末・百万円）"])).toLocaleString("ja-JP") : "—"}</td>
+        <td class="num">${feeCell(item.fields["総経費率（年率・税込）"])}</td>
+        <td class="num ${cls}">${close}</td>
+        <td class="num ${cls}">${chg.t}</td>
+        <td class="num">${vol}</td>
+        <td>${(price && price.as_of) || "—"}</td>
+      </tr>`;
+    }
+
+    function valueFor(item, key) {
+      const price = item.price || null;
+      switch (key) {
+        case "code": return item.code;
+        case "name": return item.name;
+        case "manager": return (item.fields["管理会社"] || "") + "";
+        case "asset": return toNum(item.fields["純資産総額（2025年末・百万円）"]);
+        case "fee": return toFee(item.fields["総経費率（年率・税込）"]);
+        case "close": return price && price.close != null ? price.close : null;
+        case "chg": return price && price.change_pct != null ? price.change_pct : null;
+        case "volume": return price && price.volume != null ? price.volume : null;
+        case "asof": return (price && price.as_of) || "";
+        default: return "";
+      }
+    }
+
+    function compare(a, b) {
+      if (a == null && b == null) return 0;
+      if (a == null) return 1;
+      if (b == null) return -1;
+      if (typeof a === "number" && typeof b === "number") return a - b;
+      return String(a).localeCompare(String(b), "ja");
+    }
+
+    function table(items, sortKey, sortDir, showCat) {
+      const arrow = k => k === sortKey ? `<span class="arrow">${sortDir > 0 ? "▲" : "▼"}</span>` : "";
+      const head = (key, label, cls = "") =>
+        `<th class="sortable ${cls}" data-sort="${key}">${label}${arrow(key)}</th>`;
+      return `<div class="wrap"><table>
+        <thead><tr>
+          ${head("code", "コード", "num")}${head("name", "名称")}${showCat ? "<th>カテゴリ</th>" : ""}${head("manager", "管理会社")}
+          ${head("asset", "純資産総額（百万円）", "num")}${head("fee", "総経費率", "num")}
+          ${head("close", "終値（参考値）", "num")}${head("chg", "前日比％", "num")}${head("volume", "出来高（参考値）", "num")}${head("asof", "基準日")}
+        </tr></thead>
+        <tbody>${items.map(i => row(i, showCat)).join("")}</tbody>
+      </table></div>`;
+    }
+
+    function render() {
+      const cats = DATA.categories || [];
+      const items = DATA.items || [];
+      const main = document.getElementById("main");
+      if (activeCat !== "all" && !cats.some(c => c.id === activeCat)) activeCat = "all";
+      const allBtn = `<button class="tab ${activeCat === "all" ? "active" : ""}" data-cat="all">全て<span class="n">${items.length}</span></button>`;
+      const tabs = `<div class="tabs">${allBtn}${cats.map(c =>
+        `<button class="tab ${c.id === activeCat ? "active" : ""}" data-cat="${c.id}">${c.title}<span class="n">${c.count}</span></button>`
+      ).join("")}</div>`;
+      const shown = (activeCat === "all" ? items : items.filter(i => i.category === activeCat))
+        .sort((a, b) => {
+          const va = valueFor(a, sortKey), vb = valueFor(b, sortKey);
+          if (va == null && vb == null) return 0;
+          if (va == null) return 1;   // null（データなし）は昇順・降順どちらでも末尾
+          if (vb == null) return -1;
+          return sortDir * compare(va, vb);
+        });
+      main.innerHTML = tabs + table(shown, sortKey, sortDir, activeCat === "all");
+      main.querySelectorAll(".tab").forEach(b =>
+        b.addEventListener("click", () => { activeCat = b.dataset.cat; render(); }));
+      main.querySelectorAll("th.sortable").forEach(h =>
+        h.addEventListener("click", () => {
+          const key = h.dataset.sort;
+          if (key === sortKey) { sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+          render();
+        }));
+    }
+
+    async function main() {
+      const res = await fetch("data/latest.json");
+      if (!res.ok) {
+        document.getElementById("meta").textContent = "latest.json がありません。先に ./run_local.sh --no-serve を実行してください。";
+        return;
+      }
+      DATA = await res.json();
+      document.getElementById("meta").textContent =
+        `最終更新: ${fmtJst(DATA.generated_at)}　銘柄数: ${DATA.count ?? "—"}　価格データ: ${DATA.with_price_count ?? "—"} 銘柄`;
+      const banner = document.getElementById("banner");
+      if (DATA.reference_note) {
+        banner.hidden = false;
+        banner.textContent = `価格は ${DATA.reference_note} です（サイトの免責表現としての「参考値」。Yahoo Finance で取得できない銘柄は J-Quants の過去値、それも取得できない銘柄は「データなし」で行を残します）。`;
+      }
+      render();
+    }
+    main().catch(e => {
+      document.getElementById("meta").textContent = "読み込み失敗: " + e;
+    });
+  </script>
+</body>
+</html>
