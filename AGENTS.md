@@ -49,7 +49,7 @@ src/
   jquants.py   # J-Quants 日次バー取得（Free 版ウィンドウ・ページネーション・リトライ。フォールバック用に終値・前日比を返す）
   update.py    # オーケストレーション（Yahoo → J-Quants フォールバック）→ docs/data/latest.json
 docs/
-  index.html   # 33業種タブ＋7列シンプルテーブルの一覧。検索・ソートなし
+  index.html   # 33業種タブ＋7列シンプルテーブルの一覧。初期表示は前日比%降順、ヘッダクリックで昇順・降順ソート（検索なし）
   common.js    # 共通ユーティリティ
   data/latest.json  # 生成済みスナップショット（git 管理）
 data_j.xlsx    # フォールバック用マスタスナップショット（git 管理）

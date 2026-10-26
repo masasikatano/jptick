@@ -35,6 +35,9 @@
     table { width: 100%; border-collapse: collapse; font-size: .82rem; min-width: 760px; }
     th, td { padding: .42rem .5rem; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
     th { background: #222836; color: var(--muted); font-weight: 600; position: sticky; top: 0; }
+    th[data-key] { cursor: pointer; user-select: none; }
+    th[data-key]:hover { color: var(--fg); }
+    th .arrow { display: inline-block; width: 1em; color: var(--fg); }
     tr:nth-child(even) td { background: #161b24; }
     tbody tr:hover td { background: #1d2433; }
     .num { font-variant-numeric: tabular-nums; text-align: right; }
@@ -55,6 +58,37 @@
   <script>
     let DATA = null;
     let activeCat = "all";
+    let sortKey = "change_pct";
+    let sortDir = -1; // 1: 昇順, -1: 降順（初期は前日比%降順）
+
+    // ソート用の生値を返す。価格欠損は常に末尾にする。
+    function sortVal(item, key) {
+      switch (key) {
+        case "code": return item.code;
+        case "name": return item.name;
+        case "industry": return item.industry;
+        case "market": return item.market;
+        case "close": case "change_pct": case "volume":
+          return item.price && item.price[key] != null ? item.price[key] : null;
+        case "as_of": return item.price && item.price.as_of ? item.price.as_of : null;
+        default: return null;
+      }
+    }
+
+    function sortItems(items) {
+      if (!sortKey) return items;
+      const keyed = items.map((item, idx) => ({ item, idx, v: sortVal(item, sortKey) }));
+      keyed.sort((a, b) => {
+        if (a.v == null && b.v == null) return a.idx - b.idx;
+        if (a.v == null) return 1;
+        if (b.v == null) return -1;
+        let c = 0;
+        if (typeof a.v === "number" && typeof b.v === "number") c = a.v - b.v;
+        else c = String(a.v).localeCompare(String(b.v), "ja");
+        return c !== 0 ? c * sortDir : a.idx - b.idx;
+      });
+      return keyed.map(x => x.item);
+    }
 
     // ISO 形式（2026-10-25T02:46:27+09:00）を「2026年10月25日 午前2時46分」に整形する
     function fmtJst(iso) {
@@ -86,12 +120,17 @@
       </tr>`;
     }
 
+    function th(label, key) {
+      const arrow = sortKey === key ? (sortDir === 1 ? "▲" : "▼") : "";
+      return `<th class="${["code", "close", "change_pct", "volume", "as_of"].includes(key) ? "num" : ""}" data-key="${key}">${label}<span class="arrow">${arrow}</span></th>`;
+    }
+
     function table(items, showCat) {
       return `<div class="wrap"><table>
         <thead><tr>
-          <th class="num">コード</th><th>銘柄名</th>${showCat ? "<th>業種</th>" : ""}
-          <th>市場区分</th><th class="num">終値（参考値）</th>
-          <th class="num">前日比％</th><th class="num">出来高（参考値）</th><th class="num">基準日</th>
+          ${th("コード", "code")}${th("銘柄名", "name")}${showCat ? th("業種", "industry") : ""}
+          ${th("市場区分", "market")}${th("終値（参考値）", "close")}
+          ${th("前日比％", "change_pct")}${th("出来高（参考値）", "volume")}${th("基準日", "as_of")}
         </tr></thead>
         <tbody>${items.map(i => row(i, showCat)).join("")}</tbody>
       </table></div>`;
@@ -106,10 +145,16 @@
       const tabs = `<div class="tabs">${allBtn}${cats.map(c =>
         `<button class="tab ${c.id === activeCat ? "active" : ""}" data-cat="${c.id}">${c.title}<span class="n">${c.count}</span></button>`
       ).join("")}</div>`;
-      const shown = activeCat === "all" ? items : items.filter(i => i.industry === activeCat);
+      const shown = sortItems(activeCat === "all" ? items : items.filter(i => i.industry === activeCat));
       main.innerHTML = tabs + table(shown, activeCat === "all");
       main.querySelectorAll(".tab").forEach(b =>
         b.addEventListener("click", () => { activeCat = b.dataset.cat; render(); }));
+      main.querySelectorAll("th[data-key]").forEach(h =>
+        h.addEventListener("click", () => {
+          const k = h.dataset.key;
+          if (sortKey === k) { sortDir = -sortDir; } else { sortKey = k; sortDir = 1; }
+          render();
+        }));
     }
 
     async function main() {
