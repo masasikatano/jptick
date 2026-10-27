@@ -14,7 +14,7 @@
    - 恒常的に Yahoo から取得失敗する銘柄は `src/yahoo.py` の `YAHOO_EXCLUDE` で管理し、Yahoo リクエストを省いて J-Quants フォールバックで埋める。
 
 2. **更新スケジュール**
-   - 日次1回。平日 12:30 UTC（JST 21:30）と `workflow_dispatch` で Actions を回し、(a) Yahoo Finance から価格取得（J-Quants フォールバック）、(b) マスタ xls の差分チェック＆差し替え。
+   - 日次1回。平日 10:12 UTC（JST 19:12）と `workflow_dispatch` で Actions を回し、(a) Yahoo Finance から価格取得（J-Quants フォールバック）、(b) マスタ xls の差分チェック＆差し替え。
    - `[skip ci]` 付きで main に push（etp 同様）。
 
 3. **詳細ページ**

@@ -38,7 +38,7 @@ data_j.xlsx の列マッピング・普通株フィルタ・市場区分の値�
 
 リポジトリ Settings → Pages → **Deploy from a branch** → Branch: `main`、Folder: `/docs`。
 
-GitHub Actions（`.github/workflows/update.yml`）が平日 12:30 UTC（JST 21:30）と `workflow_dispatch` で Yahoo Finance から価格を取り（J-Quants はフォールバック）、JPX ページの xlsx 差分をチェックして `latest.json` を `[skip ci]` 付きで `main` に push します。`JQUANTS_API_KEY` をリポジトリ secret に設定します（未設定でも Yahoo 経由でジョブは成功）。`GITHUB_TOKEN` に `contents: write` が必要です。
+GitHub Actions（`.github/workflows/update.yml`）が平日 10:12 UTC（JST 19:12）と `workflow_dispatch` で Yahoo Finance から価格を取り（J-Quants はフォールバック）、JPX ページの xlsx 差分をチェックして `latest.json` を `[skip ci]` 付きで `main` に push します。`JQUANTS_API_KEY` をリポジトリ secret に設定します（未設定でも Yahoo 経由でジョブは成功）。`GITHUB_TOKEN` に `contents: write` が必要です。
 
 ## プロジェクト構造
 
