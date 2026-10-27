@@ -1,0 +1,8 @@
+# Kimi Code CLI / 各種AIエージェント共通の無視リスト（.kimiignore はこのシンボリックリンク）
+.git/
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+*.xlsx
+docs/data/

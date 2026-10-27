@@ -2,8 +2,8 @@ name: update-tick-list
 
 on:
   schedule:
-    # 平日 12:30 UTC = JST 21:30
-    - cron: "30 12 * * 1-5"
+    # 平日 10:12 UTC = JST 19:12
+    - cron: "12 10 * * 1-5"
   workflow_dispatch:
 
 permissions:
