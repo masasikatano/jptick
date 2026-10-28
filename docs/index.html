@@ -168,10 +168,10 @@
         return;
       }
       DATA = await res.json();
-      // 実行は平日 10:12 UTC = 平日 19:12 JST。現在時刻より未来の最初の実行時刻。
+      // 実行は Oracle VM の cron、JST 平日 17:00。現在時刻より未来の最初の実行時刻。
       const next = (() => {
         const d = new Date(Date.now() + 9 * 3600e3);
-        d.setUTCHours(19, 12, 0, 0);
+        d.setUTCHours(17, 0, 0, 0);
         if (d.getTime() <= Date.now() + 9 * 3600e3) d.setUTCDate(d.getUTCDate() + 1);
         while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
         return new Date(d.getTime() - 9 * 3600e3);
