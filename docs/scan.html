@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Potent Scan | 東証上場個別株一覧</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <style>
+    :root {
+      --bg: #12151c; --bg2: #1a1f2b; --fg: #e8edf5; --muted: #8b95a8;
+      --line: #2a3244; --green: #3dcc8a; --red: #ef6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: var(--bg); color: var(--fg); line-height: 1.45;
+    }
+    header { padding: 1.4rem 1.2rem 1rem; border-bottom: 1px solid var(--line); background: var(--bg2); }
+    h1 { margin: 0 0 .4rem; font-size: 1.35rem; font-weight: 650; }
+    .lede { color: var(--muted); margin: 0; font-size: .95rem; }
+    .meta { margin-top: .7rem; font-size: .9rem; color: var(--muted); }
+    .banner {
+      margin-top: .7rem; padding: .55rem .75rem; border-radius: 6px;
+      background: #2a2430; color: #f0d9a8; font-size: .9rem;
+    }
+    nav { margin-top: .7rem; font-size: .9rem; }
+    nav a { color: #7db8dd; }
+    main { padding: 1rem 1.2rem 3rem; }
+    .empty { color: var(--muted); padding: 1rem 0; }
+    .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; min-width: 820px; }
+    th, td { padding: .42rem .5rem; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { background: #222836; color: var(--muted); font-weight: 600; position: sticky; top: 0; }
+    th[data-key] { cursor: pointer; user-select: none; }
+    th[data-key]:hover { color: var(--fg); }
+    th .arrow { display: inline-block; width: 1em; color: var(--fg); }
+    tr:nth-child(even) td { background: #161b24; }
+    tbody tr:hover td { background: #1d2433; }
+    .num { font-variant-numeric: tabular-nums; text-align: right; }
+    .up { color: var(--green); } .down { color: var(--red); }
+    .miss { color: var(--muted); }
+    .name-cell { max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Potent Scan</h1>
+    <p class="lede">終値 ≧ 200円・出来高 &gt; 300,000株・前日比 &gt; +4%・RVol &gt; 2.0（平均出来高なしの銘柄は他3条件で掲載、RVolは「—」）に合致し、当日（基準日が最新）の価格がある銘柄のみ表示します。</p>
+    <div class="meta" id="meta">読み込み中…（表示は JST）</div>
+    <div class="banner" id="banner" hidden></div>
+    <nav><a href="index.html">← 一覧テーブルに戻る</a></nav>
+  </header>
+  <main id="main"></main>
+  <script src="common.js?v=20261026a"></script>
+  <script>
+    let DATA = null;
+    let sortKey = "change_pct";
+    let sortDir = -1; // 1: 昇順, -1: 降順（初期は前日比%降順）
+
+    // Potent 条件（固定値）: 終値>=200、出来高>300,000、前日比>+4%、RVol>2.0。
+    // avg_volume_20d なし（RVol 算出不可）の銘柄は他3条件で掲載する。
+    // J-Quants フォールバック銘柄（過去の参考値）や前日以前の価格を
+    // その日のスキャン結果として出さないため、price.as_of が reference_date と
+    // 一致する銘柄に限る。
+    function isPotent(item) {
+      const p = item.price;
+      if (!p) return false;
+      if (p.as_of !== DATA.reference_date) return false;
+      if (!(p.close != null && p.close >= 200)) return false;
+      if (!(p.volume != null && p.volume > 300000)) return false;
+      if (!(p.change_pct != null && p.change_pct > 4)) return false;
+      if (p.rvol != null) return p.rvol > 2.0;
+      return true;
+    }
+
+    function sortVal(item, key) {
+      switch (key) {
+        case "code": return item.code;
+        case "name": return item.name;
+        case "market": return item.market;
+        case "industry": return item.industry;
+        case "close": case "change_pct": case "volume": case "rvol":
+          return item.price && item.price[key] != null ? item.price[key] : null;
+        default: return null;
+      }
+    }
+
+    function sortItems(items) {
+      if (!sortKey) return items;
+      const keyed = items.map((item, idx) => ({ item, idx, v: sortVal(item, sortKey) }));
+      keyed.sort((a, b) => {
+        if (a.v == null && b.v == null) return a.idx - b.idx;
+        if (a.v == null) return 1;
+        if (b.v == null) return -1;
+        let c = 0;
+        if (typeof a.v === "number" && typeof b.v === "number") c = a.v - b.v;
+        else c = String(a.v).localeCompare(String(b.v), "ja");
+        return c !== 0 ? c * sortDir : a.idx - b.idx;
+      });
+      return keyed.map(x => x.item);
+    }
+
+    function fmtJst(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (isNaN(d)) return "—";
+      const p = n => String(n).padStart(2, "0");
+      const ampm = d.getHours() < 12 ? "午前" : "午後";
+      const h12 = d.getHours() % 12 === 0 ? 12 : d.getHours() % 12;
+      return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${ampm}${h12}時${p(d.getMinutes())}分`;
+    }
+
+    // 次回更新: 平日（月〜金）17:00 JST の cron。祝日は考慮しない簡易表示。
+    function nextUpdate() {
+      const nowJst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+      const d = new Date(nowJst);
+      const todayRun = (d.getDay() >= 1 && d.getDay() <= 5) &&
+        (d.getHours() < 17 || (d.getHours() === 17 && d.getMinutes() === 0));
+      if (!todayRun) {
+        d.setDate(d.getDate() + 1);
+        while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+      }
+      d.setHours(17, 0, 0, 0);
+      const wd = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+      return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${wd}）午後5時00分`;
+    }
+
+    function row(item) {
+      const price = item.price || null;
+      const chg = signed(price && price.change_pct);
+      const close = price && price.close != null ? Math.floor(price.close).toLocaleString("ja-JP") : "データなし";
+      const cls = price && price.close != null ? (chg.c || "") : "miss";
+      const vol = price && price.volume != null ? price.volume.toLocaleString("ja-JP") : "—";
+      const rvol = price && price.rvol != null ? price.rvol.toFixed(2) : "—";
+      const asOf = price && price.as_of ? price.as_of.slice(5) : "—";
+      return `<tr data-code="${item.code}">
+        <td class="num">${item.code}</td>
+        <td class="name-cell" title="${item.name}">${item.name}</td>
+        <td>${item.market}</td>
+        <td>${item.industry}</td>
+        <td class="num ${cls}">${close}</td>
+        <td class="num ${cls}">${chg.t}</td>
+        <td class="num">${vol}</td>
+        <td class="num">${rvol}</td>
+        <td>${asOf}</td>
+      </tr>`;
+    }
+
+    function th(label, key) {
+      const arrow = sortKey === key ? (sortDir === 1 ? "▲" : "▼") : "";
+      return `<th class="${["code", "close", "change_pct", "volume", "rvol"].includes(key) ? "num" : ""}" data-key="${key}">${label}<span class="arrow">${arrow}</span></th>`;
+    }
+
+    function render() {
+      const shown = sortItems((DATA.items || []).filter(isPotent));
+      const main = document.getElementById("main");
+      if (!shown.length) {
+        main.innerHTML = `<p class="empty">条件に該当する銘柄はありません。</p>`;
+        return;
+      }
+      main.innerHTML = `<div class="wrap"><table>
+        <thead><tr>
+          ${th("コード", "code")}${th("銘柄名", "name")}
+          ${th("市場", "market")}${th("業種", "industry")}${th("終値（参考値）", "close")}
+          ${th("前日比％", "change_pct")}${th("出来高（参考値）", "volume")}${th("RVol", "rvol")}${th("基準日", "as_of")}
+        </tr></thead>
+        <tbody>${shown.map(i => row(i)).join("")}</tbody>
+      </table></div>`;
+      main.querySelectorAll("th[data-key]").forEach(h =>
+        h.addEventListener("click", () => {
+          const k = h.dataset.key;
+          if (sortKey === k) { sortDir = -sortDir; } else { sortKey = k; sortDir = 1; }
+          render();
+        }));
+    }
+
+    async function main() {
+      const res = await fetch("data/latest.json");
+      if (!res.ok) {
+        document.getElementById("meta").textContent = "latest.json がありません。先に ./run_local.sh --no-serve を実行してください。";
+        return;
+      }
+      DATA = await res.json();
+      document.getElementById("meta").textContent =
+        `最終更新: ${fmtJst(DATA.generated_at)}　次回更新: ${nextUpdate()}（平日17時JST・祝日除く）　銘柄数: ${DATA.count ?? "—"}　該当: ${(DATA.items || []).filter(isPotent).length} 銘柄`;
+      const banner = document.getElementById("banner");
+      if (DATA.reference_note) {
+        banner.hidden = false;
+        banner.textContent = `価格は ${DATA.reference_note} です（サイトの免責表現としての「参考値」。Yahoo Finance で取得できない銘柄は J-Quants の過去値、それも取得できない銘柄は「データなし」で行を残します）。`;
+      }
+      render();
+    }
+    main().catch(e => {
+      document.getElementById("meta").textContent = "読み込み失敗: " + e;
+    });
+  </script>
+</body>
+</html>

@@ -44,6 +44,30 @@ def test_parse_chart_single_point_no_change():
     assert parsed["change_pct"] is None
 
 
+def test_parse_chart_rvol():
+    # 直前20営業日の平均に対する当日出来高の倍率
+    closes = [1000.0] * 20 + [1050.0]
+    volumes = [1000] * 20 + [3000]
+    body = {
+        "chart": {
+            "result": [{
+                "timestamp": list(range(1761091200, 1761091200 + 86400 * 21, 86400)),
+                "indicators": {"quote": [{"close": closes, "volume": volumes}]},
+            }],
+        },
+    }
+    parsed = yahoo.parse_chart(body)
+    assert parsed["avg_volume_20d"] == 1000
+    assert parsed["rvol"] == 3.0
+
+
+def test_parse_chart_rvol_none_when_short_history():
+    # 直前の有効値が10営業日分未満なら avg_volume_20d・rvol は None
+    parsed = yahoo.parse_chart(_chart_body([3630.0, 3650.0], [1000, 1200]))
+    assert parsed["avg_volume_20d"] is None
+    assert parsed["rvol"] is None
+
+
 def test_parse_chart_no_data():
     assert yahoo.parse_chart({"chart": {"result": []}}) is None
     assert yahoo.parse_chart(_chart_body([None, None])) is None
